@@ -1,0 +1,215 @@
+<?php
+
+/**
+ * Implements hook_permission()
+ */
+function htmlpages_permission() {
+  return array(
+    'administer html pages' => array(
+      'title' => t("Administer HTML Pages"),
+      'description' => t("Allows a user to create, delete and edit HTML pages")
+    ),
+    'view html pages' => array(
+      'title' => t("View HTML Pages"),
+      'description' => t("Used as the default permission for pages")
+    ),
+    'view html preview pages' => array(
+      'title' => t("View HTML Preview Pages"),
+      'description' => t("Used to show preview pages to users")
+    )
+  );
+}
+
+/**
+ * Implements hook_menu()
+ */
+function htmlpages_menu() {
+  $items["admin/structure/htmlpages"] = array(
+    'title' => 'HTML pages',
+    'description' => 'Administer HTML pages',
+    'page callback' => 'htmlpages_admin_page',
+    'access arguments' => array("administer html pages"),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'htmlpages.admin.inc',
+  );
+
+  $items["admin/structure/htmlpages/manage"] = array(
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'title' => 'Manage',
+  );
+
+  $items["admin/structure/htmlpages/add"] = array(
+    'title' => 'Add HTML page',
+    'page callback' => 'htmlpages_add',
+    'access arguments' => array("administer html pages"),
+    'type' => MENU_LOCAL_ACTION,
+    'file' => 'htmlpages.pages.inc',
+  );
+
+  $items["admin/structure/htmlpages/%htmlpages/edit"] = array(
+    'title' => 'Edit page',
+    'page callback' => 'htmlpages_edit',
+    'page arguments' => array(3),
+    'access arguments' => array("administer html pages"),
+    'type' => MENU_CALLBACK,
+    'file' => 'htmlpages.pages.inc',
+  );
+
+  $items["admin/structure/htmlpages/%htmlpages/delete"] = array(
+    'title' => 'Delete',
+    'page callback' => 'htmlpages_delete',
+    'page arguments' => array(3),
+    'access arguments' => array("administer html pages"),
+    'type' => MENU_CALLBACK,
+    'file' => 'htmlpages.pages.inc'
+  );
+
+  // create a menu item for each of our html pages
+  $results = htmlpages_load_multiple();
+  foreach($results as $key => $result) {
+    $status = $result->status;
+    // the status is not published, then use a different access arguments that only a few can see
+    $preview = $status == 0 ? array("view html preview pages") : array($result->access_arguments);
+    $items["pages/" . $result->machine_name] = array(
+      'page callback' => 'htmlpages_default_callback',
+      'page arguments' => array($result),
+      'title' => $result->title,
+      'access arguments' => $preview,
+      'type' => MENU_NORMAL_ITEM,
+    );
+
+    if(!empty($result->menu_name)) {
+      $items["pages/" . $result->machine_name]["menu_name"] = $result->menu_name;
+    }
+
+    watchdog("htmlpages", "Created page with machine_name " . $result->machine_name . " and argument " . $result->access_arguments);
+  }
+
+  return $items;
+}
+
+/**
+ * Implements hook_entity_info()
+ */
+function htmlpages_entity_info() {
+  $info["htmlpage"] = array(
+    'label' => t("HTML Page"),
+    'fieldable' => TRUE,
+    'base table' => 'htmlpages',
+    'entity keys' => array(
+      'id' => 'id',
+      // 'bundle' => 'type',
+    ),
+    'bundle keys' => array(
+      'bundle' => 'type',
+    ),
+    'bundles' => array(
+      'htmlpage' => array(
+        'label' => t('HTML Page'),
+        'admin' => array(
+          'path' => 'admin/structure/htmlpages',
+          'access arguments' => array("administer html pages")
+        ),
+      )
+    ),
+    'module' => 'htmlpages',
+    'label callback' => 'htmlpages_label',
+    'uri callback' => 'htmlpages_uri',
+    'controller class' => 'HTMLPagesController',
+    'load hook' => 'htmlpages_load',
+    'static cache' => TRUE,
+    'view modes' => array(
+      'full' => array(
+        'label' => t("Full"),
+        'custom settings' => FALSE
+      ),
+    ),
+  );
+
+  return $info;
+}
+
+/**
+ * Label for entities
+ */
+function htmlpages_label($entity) {
+  return $entity->title;
+}
+
+/**
+ * URI for entities
+ */
+function htmlpages_uri($entity) {
+  return array("path" => $entity->machine_name);
+}
+
+/**
+ * Load a contact, used by hook_menu
+ */
+function htmlpages_load($id = NULL, $reset = FALSE) {
+  $ids = (isset($id) ? array($id) : array());
+  $entity = htmlpages_load_multiple($ids, array(), $reset);
+  return $entity ? reset($entity) : FALSE;
+}
+
+/**
+ * Load multiple contacts
+ * @param  boolean $cids       Array of cids to load
+ * @param  array   $conditions conditions to take
+ * @param  boolean $reset      Clean the cache or not
+ * @return [type]              array
+ */
+function htmlpages_load_multiple($ids = FALSE, $conditions = array(), $reset = FALSE) {
+  return entity_load("htmlpage", $ids, $conditions, $reset);
+}
+
+/**
+ * Implements hook_theme()
+ */
+function htmlpages_theme() {
+  $items["htmlpage"] = array(
+    'variables' => array("content" => NULL, "page" => NULL),
+    'template' => 'htmlpage-entity'
+  );
+
+  return $items;
+}
+
+/**
+ * Default wrapper callback to render pages, all pages go throught this callback, we add the css inline and return the theme function
+ * calling htmlpage, if you want to override it, override theme_htmlpage
+ * To override the wrapper arround this function, you must override page--pages.tpl.php in your theme, you can also override
+ * page--pages--somepage.tpl.php
+ */
+function htmlpages_default_callback($page) {
+  drupal_add_css($page->css, $option['type'] = 'inline');
+  // consider http://drupal.org/node/1452580
+  return theme("htmlpage", array("content" => $page->content, "page" => $page));
+}
+
+function htmlpages_save($entity) {
+  return entity_get_controller('htmlpage')->save($entity);
+}
+
+function htmlpages_update($entity) {
+  return entity_get_controller("htmlpage")->update($entity);
+}
+
+function htmlpages_remove($entity) {
+  return entity_get_controller("htmlpage")->delete($entity);
+}
+
+function htmlpages_search_info() {
+  return array(
+    'title' => 'Content',
+    'path' => 'pages',
+  );
+}
+
+// function htmlpages_search_execute($keys = NULL, $conditions = NULL) {
+
+// }
+
+// function htmlpages_update_index() {
+  
+// }
